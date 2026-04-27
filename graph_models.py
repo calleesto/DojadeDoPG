@@ -21,3 +21,4 @@ class TransitConnection(Edge):
         super().__init__(source_node, target_node, weight)
         self.trip_id = trip_id
         self.route_type = route_type
+        self.schedules = []

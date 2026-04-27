@@ -26,13 +26,48 @@ def load_nodes():
 
         graph_nodes[stop_id] = node
 
-    print(f"successfully loaded \033[1m{len(graph_nodes)}\033[0m stops into the graph")
+
+def gtfs_time_to_seconds(time_str):
+    h, m, s = map(int, str(time_str).split(':'))
+    return h * 3600 + m * 60 + s
+
+
+def load_edges():
+    df = pd.read_csv('./gtfs_data/stop_times.txt')
+
+    df = df.sort_values(by=['trip_id', 'stop_sequence'])
+
+    grouped = df.groupby('trip_id')
+
+    for trip_id, group in grouped:
+
+        stops_in_trip = group.to_dict('records')
+
+        for i in range(len(stops_in_trip) - 1):
+            stop_a_data = stops_in_trip[i]
+            stop_b_data = stops_in_trip[i + 1]
+
+            node_a_id = str(stop_a_data['stop_id'])
+            node_b_id = str(stop_b_data['stop_id'])
+
+            if node_a_id in graph_nodes and node_b_id in graph_nodes:
+                time_a = gtfs_time_to_seconds(stop_a_data['departure_time'])
+                time_b = gtfs_time_to_seconds(stop_b_data['arrival_time'])
+
+                weight = time_b - time_a
+
+                edge = TransitConnection(
+                    source_node=graph_nodes[node_a_id],
+                    target_node=graph_nodes[node_b_id],
+                    weight=weight,
+                    trip_id=trip_id,
+                    route_type="unknown"
+                )
+
+                graph_nodes[node_a_id].edges.append(edge)
+
 
 
 if __name__ == "__main__":
     load_nodes()
-
-    # testing the dicitonary
-    sample_id = list(graph_nodes.keys())[0]
-    sample_node = graph_nodes[sample_id]
-    print(f"\ntest node id: {sample_node.id}\nname: {sample_node.name}\ncoordinates: ({sample_node.lat}, {sample_node.lon})")
+    load_edges()
