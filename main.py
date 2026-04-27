@@ -1,6 +1,3 @@
-
-
-
 from graph_builder import get_or_build_graph, edge_counter
 from visualizer import draw_graph
 
