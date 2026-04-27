@@ -1,5 +1,10 @@
 import pandas as pd
 from graph_models import TransitStop, TransitConnection
+import time
+import plotly.graph_objects as go
+import os
+import pickle
+
 
 
 # were using '{}' instead of '[]' because we want to be able to access the node by its id
@@ -9,9 +14,14 @@ from graph_models import TransitStop, TransitConnection
 # key: stop_id (string)
 # value: TransitStop object
 graph_nodes = {}
+edge_counter = 0
+node_counter = 0
+CACHE_FILE = "graph_cache.pkl"
 
 
 def load_nodes():
+    start_time = time.perf_counter()
+    global node_counter
     stops_df = pd.read_csv('./gtfs_data/stops.txt')
 
     for index, row in stops_df.iterrows():
@@ -25,7 +35,12 @@ def load_nodes():
         )
 
         graph_nodes[stop_id] = node
+        node_counter += 1
 
+    print(f"loaded {node_counter} nodes")
+    end_time = time.perf_counter()
+    execution_time = end_time - start_time
+    print(f"load_nodes took {execution_time:.4f} seconds to finish.")
 
 def gtfs_time_to_seconds(time_str):
     h, m, s = map(int, str(time_str).split(':'))
@@ -33,14 +48,14 @@ def gtfs_time_to_seconds(time_str):
 
 
 def load_edges():
+    start_time = time.perf_counter()
+    global edge_counter
+
     df = pd.read_csv('./gtfs_data/stop_times.txt')
-
     df = df.sort_values(by=['trip_id', 'stop_sequence'])
-
     grouped = df.groupby('trip_id')
 
     for trip_id, group in grouped:
-
         stops_in_trip = group.to_dict('records')
 
         for i in range(len(stops_in_trip) - 1):
@@ -53,21 +68,145 @@ def load_edges():
             if node_a_id in graph_nodes and node_b_id in graph_nodes:
                 time_a = gtfs_time_to_seconds(stop_a_data['departure_time'])
                 time_b = gtfs_time_to_seconds(stop_b_data['arrival_time'])
-
                 weight = time_b - time_a
 
-                edge = TransitConnection(
-                    source_node=graph_nodes[node_a_id],
-                    target_node=graph_nodes[node_b_id],
-                    weight=weight,
-                    trip_id=trip_id,
-                    route_type="unknown"
-                )
+                # Tworzymy mały pakiet danych o tym konkretnym kursie
+                trip_info = {
+                    'departure': time_a,
+                    'duration': weight,
+                    'trip_id': trip_id
+                }
 
-                graph_nodes[node_a_id].edges.append(edge)
+                existing = graph_nodes[node_a_id].edges.get(node_b_id)
+
+                if existing is None:
+                    edge = TransitConnection(
+                        source_node=graph_nodes[node_a_id],
+                        target_node=graph_nodes[node_b_id],
+                        weight=weight,
+                        trip_id=trip_id,
+                        route_type="unknown"
+                    )
+                    edge.schedules.append(trip_info)
+
+                    graph_nodes[node_a_id].edges[node_b_id] = edge
+                    edge_counter += 1
+                else:
+                    existing.schedules.append(trip_info)
+
+                    if weight < existing.weight:
+                        existing.weight = weight
+
+    print(f"loaded {edge_counter} edges")
+    end_time = time.perf_counter()
+    execution_time = end_time - start_time
+    print(f"load_edges took {execution_time:.4f} seconds to finish.")
+
+
+
+def draw_graph(edge_limit=15000):
+    start_time = time.perf_counter()
+    edge_x = []
+    edge_y = []
+
+    edges_drawn = 0
+
+    for node_id, node in graph_nodes.items():
+        for edge in node.edges.values():
+            if edges_drawn >= edge_limit:
+                break
+
+            A = edge.source
+            B = edge.target
+
+            edge_x.extend([A.lon, B.lon, None])
+            edge_y.extend([A.lat, B.lat, None])
+
+            edges_drawn += 1
+
+        if edges_drawn >= edge_limit:
+            break
+
+    node_x = []
+    node_y = []
+    node_text = []
+
+    for node_id, node in graph_nodes.items():
+        node_x.append(node.lon)
+        node_y.append(node.lat)
+        node_text.append(node.name)
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatter(
+        x=edge_x, y=edge_y,
+        line=dict(width=0.5, color='#445555'),
+        hoverinfo='none',
+        mode='lines'
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=node_x, y=node_y,
+        mode='markers',
+        hoverinfo='text',
+        text=node_text,
+        marker=dict(
+            showscale=False,
+            color='#00ffcc',
+            size=3,
+            line_width=0
+        )
+    ))
+
+    fig.update_layout(
+        title="NeptuNet: Topology of Gdańsk Transit Network",
+        title_font_size=18,
+        showlegend=False,
+        hovermode='closest',
+        margin=dict(b=0, l=0, r=0, t=40),
+        plot_bgcolor='#050505',
+        paper_bgcolor='#050505',
+        font=dict(color='#00ffcc'),
+        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
+    )
+
+    filename = "NeptuNet.html"
+    fig.write_html(filename)
+    end_time = time.perf_counter()
+    execution_time = end_time - start_time
+    print(f"draw_graph took {execution_time:.4f} seconds to finish.")
+
+
+
+def get_or_build_graph(force_build = False):
+    global graph_nodes
+    global edge_counter
+    global node_counter
+
+    if force_build or not os.path.exists(CACHE_FILE):
+        if force_build:
+            print("rebuild flag set to TRUE. forcing rebuild")
+        else:
+            print("cache empty")
+        graph_nodes.clear()
+
+        load_nodes()
+        load_edges()
+
+        # wb stands for write binary
+        with open(CACHE_FILE, 'wb') as f:
+            pickle.dump((graph_nodes, node_counter, edge_counter), f, protocol=pickle.HIGHEST_PROTOCOL)
+    else:
+        print("cache contains graph. loading from cache...")
+        # rb stands for read binary
+        with open(CACHE_FILE, 'rb') as f:
+            graph_nodes, node_counter, edge_counter = pickle.load(f)
+        print(f"loaded {edge_counter} edges and {node_counter} nodes")
 
 
 
 if __name__ == "__main__":
-    load_nodes()
-    load_edges()
+    FORCE_REBUILD = False
+    get_or_build_graph(force_build=FORCE_REBUILD)
+    draw_graph(edge_limit=edge_counter)

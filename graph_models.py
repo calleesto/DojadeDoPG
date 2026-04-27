@@ -1,7 +1,7 @@
 class Node:
     def __init__(self, node_id):
         self.id = node_id
-        self.edges = []
+        self.edges = {}
 
 class Edge:
     def __init__(self, source_node, target_node, weight):
