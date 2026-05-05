@@ -1,10 +1,12 @@
 import time
 import plotly.graph_objects as go
 
+
 def draw_graph(graph_nodes, edge_limit=15000):
     start_time = time.perf_counter()
-    edge_x = []
-    edge_y = []
+
+    edge_x, edge_y = [], []
+    edge_mid_x, edge_mid_y, edge_text = [], [], []
 
     edges_drawn = 0
 
@@ -19,14 +21,22 @@ def draw_graph(graph_nodes, edge_limit=15000):
             edge_x.extend([A.lon, B.lon, None])
             edge_y.extend([A.lat, B.lat, None])
 
+            mid_x = (A.lon + B.lon) / 2
+            mid_y = (A.lat + B.lat) / 2
+            edge_mid_x.append(mid_x)
+            edge_mid_y.append(mid_y)
+
+            minutes = int(edge.weight // 60)
+            seconds = int(edge.weight % 60)
+            time_str = f"{minutes}m {seconds}s" if minutes > 0 else f"{seconds}s"
+            edge_text.append(time_str)
+
             edges_drawn += 1
 
         if edges_drawn >= edge_limit:
             break
 
-    node_x = []
-    node_y = []
-    node_text = []
+    node_x, node_y, node_text = [], [], []
 
     for node_id, node in graph_nodes.items():
         node_x.append(node.lon)
@@ -43,21 +53,24 @@ def draw_graph(graph_nodes, edge_limit=15000):
     ))
 
     fig.add_trace(go.Scatter(
+        x=edge_mid_x, y=edge_mid_y,
+        mode='markers',
+        marker=dict(size=4, color='rgba(0,0,0,0)'),
+        text=edge_text,
+        hoverinfo='text'
+    ))
+
+    fig.add_trace(go.Scatter(
         x=node_x, y=node_y,
         mode='markers',
         hoverinfo='text',
         text=node_text,
-        marker=dict(
-            showscale=False,
-            color='#00ffcc',
-            size=3,
-            line_width=0
-        )
+        marker=dict(showscale=False, color='#00ffcc', size=3, line_width=0)
     ))
 
     fig.update_layout(
-        title="NeptuNet: Topology of Gdańsk Transit Network",
-        title_font_size=18,
+        #title="NeptuNet: Topology of Gdańsk Transit Network",
+        #title_font_size=18,
         showlegend=False,
         hovermode='closest',
         margin=dict(b=0, l=0, r=0, t=40),
@@ -68,8 +81,7 @@ def draw_graph(graph_nodes, edge_limit=15000):
         yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
     )
 
-    filename = "NeptuNet.html"
-    fig.write_html(filename)
     end_time = time.perf_counter()
-    execution_time = end_time - start_time
-    print(f"draw_graph took {execution_time:.4f} seconds to finish.")
+    print(f"draw_graph took {end_time - start_time:.4f} seconds to finish.")
+
+    return fig

@@ -64,7 +64,6 @@ def load_edges():
                 time_b = gtfs_time_to_seconds(stop_b_data['arrival_time'])
                 weight = time_b - time_a
 
-                # Tworzymy mały pakiet danych o tym konkretnym kursie
                 trip_info = {
                     'departure': time_a,
                     'duration': weight,
