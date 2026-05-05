@@ -81,6 +81,7 @@ def draw_graph(graph_nodes, edge_limit=15000):
         yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
     )
 
+
     end_time = time.perf_counter()
     print(f"draw_graph took {end_time - start_time:.4f} seconds to finish.")
 

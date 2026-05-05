@@ -7,6 +7,7 @@ nodes, total_edges = get_or_build_graph(force_build=FORCE_REBUILD)
 
 app = Dash(__name__)
 
+
 app.layout = html.Div(
     style={'backgroundColor': '#050505', 'height': '100vh', 'margin': '0', 'overflow': 'hidden'},
     children=[
