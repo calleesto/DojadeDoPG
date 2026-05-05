@@ -122,3 +122,5 @@ def get_or_build_graph(force_build = False):
             graph_nodes, node_counter, edge_counter = pickle.load(f)
         print(f"loaded {edge_counter} edges and {node_counter} nodes")
 
+    return graph_nodes, edge_counter
+

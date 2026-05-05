@@ -1,8 +1,7 @@
 import time
 import plotly.graph_objects as go
-from graph_builder import graph_nodes
 
-def draw_graph(edge_limit=15000):
+def draw_graph(graph_nodes, edge_limit=15000):
     start_time = time.perf_counter()
     edge_x = []
     edge_y = []
