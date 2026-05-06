@@ -1,24 +1,18 @@
 import pandas as pd
 from graph_models import TransitStop, TransitConnection
 import time, os, pickle
-from downloader import fetch_latest_gtfs
 
-# were using '{}' instead of '[]' because we want to be able to access the node by its id
-# {} - dictionary/hash table
-# [] - list/dynamic array
-
-# key: stop_id (string)
-# value: TransitStop object
-graph_nodes = {}
-edge_counter = 0
-node_counter = 0
 CACHE_FILE = "graph_cache.pkl"
 
-def load_nodes():
-    start_time = time.perf_counter()
-    global node_counter
-    stops_df = pd.read_csv('./gtfs_data/stops.txt')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+GTFS_FOLDER = os.path.join(BASE_DIR, 'gtfs_data')
+stops_path = os.path.join(BASE_DIR, 'gtfs_data', 'stops.txt')
+stop_times_path = os.path.join(BASE_DIR, 'gtfs_data', 'stop_times.txt')
 
+def load_nodes(nodes_dict: dict[str, TransitStop]) -> int:
+    stops_df = pd.read_csv('./gtfs_data/stops.txt')
+    start_time = time.perf_counter() # function timer
+    count = 0
     for index, row in stops_df.iterrows():
         stop_id = str(row['stop_id'])
 
@@ -29,24 +23,32 @@ def load_nodes():
             lon=row['stop_lon']
         )
 
-        graph_nodes[stop_id] = node
-        node_counter += 1
+        # filling in the graph_nodes dictionary with node objects
+        nodes_dict[stop_id] = node
+        count += 1
 
-    print(f"loaded {node_counter} nodes")
-    end_time = time.perf_counter()
+
+    end_time = time.perf_counter() # function timer
     execution_time = end_time - start_time
-    print(f"load_nodes took {execution_time:.4f} seconds to finish.")
 
-def gtfs_time_to_seconds(time_str):
+    # function summary
+    print(f"loaded {count} nodes")
+    print(f"load_nodes took {execution_time:.4f} seconds to finish.")
+    return count
+
+def gtfs_time_to_seconds(time_str: str) -> int:
+    """converts GTFS time (hh:mm:ss) to total seconds since midnight"""
     h, m, s = map(int, str(time_str).split(':'))
     return h * 3600 + m * 60 + s
 
 
-def load_edges():
-    start_time = time.perf_counter()
-    global edge_counter
+def load_edges(nodes_dict: dict[str, TransitStop]) -> int:
+    """load edges """
+    start_time = time.perf_counter() # function timer
+    count = 0
 
-    df = pd.read_csv('./gtfs_data/stop_times.txt')
+    # format, sort and group csv data
+    df = pd.read_csv('./gtfs_data/stop_times.txt') # df = dataframe (virtual spreadsheet)
     df = df.sort_values(by=['trip_id', 'stop_sequence'])
     grouped = df.groupby('trip_id')
 
@@ -60,71 +62,88 @@ def load_edges():
             node_a_id = str(stop_a_data['stop_id'])
             node_b_id = str(stop_b_data['stop_id'])
 
-            if node_a_id in graph_nodes and node_b_id in graph_nodes:
-                time_a = gtfs_time_to_seconds(stop_a_data['departure_time'])
-                time_b = gtfs_time_to_seconds(stop_b_data['arrival_time'])
-                weight = time_b - time_a
+            if node_a_id in nodes_dict and node_b_id in nodes_dict:
+                dep_time = gtfs_time_to_seconds(stop_a_data['departure_time'])
+                arr_time = gtfs_time_to_seconds(stop_b_data['arrival_time'])
+                weight = arr_time - dep_time
 
                 trip_info = {
-                    'departure': time_a,
+                    'departure': dep_time,
                     'duration': weight,
                     'trip_id': trip_id
                 }
 
-                existing = graph_nodes[node_a_id].edges.get(node_b_id)
+                existing = nodes_dict[node_a_id].edges.get(node_b_id)
 
                 if existing is None:
                     edge = TransitConnection(
-                        source_node=graph_nodes[node_a_id],
-                        target_node=graph_nodes[node_b_id],
+                        source_node=nodes_dict[node_a_id],
+                        target_node=nodes_dict[node_b_id],
                         weight=weight,
                         trip_id=trip_id,
                         route_type="unknown"
                     )
                     edge.schedules.append(trip_info)
 
-                    graph_nodes[node_a_id].edges[node_b_id] = edge
-                    edge_counter += 1
+                    # add TransitConnection object to the TransitStop's edges dictionary
+                    nodes_dict[node_a_id].edges[node_b_id] = edge
+                    count += 1
                 else:
                     existing.schedules.append(trip_info)
 
                     if weight < existing.weight:
                         existing.weight = weight
 
-    print(f"loaded {edge_counter} edges")
-    end_time = time.perf_counter()
+    end_time = time.perf_counter() # function timer
     execution_time = end_time - start_time
+    print(f"loaded {count} edges")
     print(f"load_edges took {execution_time:.4f} seconds to finish.")
 
+    return count
 
-def get_or_build_graph(force_build = False):
-    global graph_nodes
-    global edge_counter
-    global node_counter
 
-    if force_build or not os.path.exists(CACHE_FILE):
+def build_cache() -> tuple[dict, int, int]:
+    graph_nodes = {}
+    node_counter = load_nodes(graph_nodes)
+    edge_counter = load_edges(graph_nodes)
+
+    with open(CACHE_FILE, 'wb') as f:
+        pickle.dump((graph_nodes, node_counter, edge_counter), f, protocol=pickle.HIGHEST_PROTOCOL)
+
+    return graph_nodes, node_counter, edge_counter
+
+
+def read_cache() -> tuple[dict, int, int]:
+    with open(CACHE_FILE, 'rb') as f:
+        graph_nodes, node_counter, edge_counter = pickle.load(f)
+
+    return graph_nodes, node_counter, edge_counter
+
+def get_or_build_graph(force_build: bool = False) -> tuple[dict, int]:
+    # graph_nodes = {} - we use dictionary ({}) instead of a list ([]) to access node objects by their id
+    data_downloaded = False
+    if not os.path.exists(stops_path) or not os.path.exists(stop_times_path):
+        print("GTFS data missing. fetching latest.")
+        from downloader import fetch_latest_gtfs
+        fetch_latest_gtfs()
+        data_downloaded = True
+    else:
+        print("GTFS data found. skipping download.")
+
+    if force_build or data_downloaded or not os.path.exists(CACHE_FILE):
         if force_build:
-            print("rebuild flag set to TRUE. forcing rebuild")
+            print("rebuild flag set to TRUE. forcing cache rebuild")
+        elif data_downloaded:
+            print("new GTFS data available. rebuilding cache.")
         else:
-            print("cache empty")
+            print("cache empty. building graph from scratch.")
 
-        if not os.path.exists('./gtfs_data/stops.txt') or not os.path.exists('./gtfs_data/stop_times.txt'):
-            print("Required GTFS files are missing.")
-            fetch_latest_gtfs()
+        graph_nodes, node_counter, edge_counter = build_cache()
 
-        graph_nodes.clear()
-        load_nodes()
-        load_edges()
-
-        # wb stands for write binary
-        with open(CACHE_FILE, 'wb') as f:
-            pickle.dump((graph_nodes, node_counter, edge_counter), f, protocol=pickle.HIGHEST_PROTOCOL)
     else:
         print("cache contains graph. loading from cache...")
-        # rb stands for read binary
-        with open(CACHE_FILE, 'rb') as f:
-            graph_nodes, node_counter, edge_counter = pickle.load(f)
-        print(f"loaded {edge_counter} edges and {node_counter} nodes")
+        graph_nodes, node_counter, edge_counter = read_cache()
 
+    print(f"loaded {edge_counter} edges and {node_counter} nodes")
     return graph_nodes, edge_counter
 
