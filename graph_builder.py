@@ -130,6 +130,7 @@ def get_or_build_graph(force_build: bool = False) -> tuple[dict, int]:
     else:
         print("GTFS data found. skipping download.")
 
+
     if force_build or data_downloaded or not os.path.exists(CACHE_FILE):
         if force_build:
             print("rebuild flag set to TRUE. forcing cache rebuild")
