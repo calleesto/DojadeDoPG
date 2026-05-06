@@ -7,23 +7,23 @@ GTFS_URL = "https://ckan.multimediagdansk.pl/dataset/c24aa637-3619-4dc2-a171-a23
 
 EXTRACT_DIR = "./gtfs_data"
 
-def fetch_latest_gtfs(url, extract_path):
+def fetch_latest_gtfs():
     print("downloading up-to-date GTFS data")
 
     try:
-        response = requests.get(url)
+        response = requests.get(GTFS_URL)
         response.raise_for_status()
 
         print("download successful - extracting files")
 
-        os.makedirs(extract_path, exist_ok=True)
+        os.makedirs(EXTRACT_DIR, exist_ok=True)
 
         with zipfile.ZipFile(io.BytesIO(response.content)) as z:
-            z.extractall(extract_path)
+            z.extractall(EXTRACT_DIR)
 
         print(f"extract successful - files located in \033[1m{extract_path}\033[0m")
 
     except requests.exceptions.RequestException as e:
         print(f"error: {e}")
 
-fetch_latest_gtfs(GTFS_URL, EXTRACT_DIR)
+fetch_latest_gtfs()

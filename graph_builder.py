@@ -1,6 +1,7 @@
 import pandas as pd
 from graph_models import TransitStop, TransitConnection
 import time, os, pickle
+from downloader import fetch_latest_gtfs
 
 # were using '{}' instead of '[]' because we want to be able to access the node by its id
 # {} - dictionary/hash table
@@ -106,8 +107,12 @@ def get_or_build_graph(force_build = False):
             print("rebuild flag set to TRUE. forcing rebuild")
         else:
             print("cache empty")
-        graph_nodes.clear()
 
+        if not os.path.exists('./gtfs_data/stops.txt') or not os.path.exists('./gtfs_data/stop_times.txt'):
+            print("Required GTFS files are missing.")
+            fetch_latest_gtfs()
+
+        graph_nodes.clear()
         load_nodes()
         load_edges()
 
