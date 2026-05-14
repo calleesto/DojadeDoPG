@@ -2,102 +2,92 @@ import time
 import plotly.graph_objects as go
 from graph_models import TransitStop
 
-DEFAULT_EDGE_LIMIT = 15_000
+THRESHOLD = 0.05
 
-def draw_graph(graph_nodes: dict[str, TransitStop], edge_limit=DEFAULT_EDGE_LIMIT):
-    start_time = time.perf_counter() # function timer
+def draw_graph(graph_nodes: dict[str, TransitStop], selected_time_sec: int = None):
+    start_time = time.perf_counter()
 
-    edge_x, edge_y = [], []
-    edge_mid_x, edge_mid_y, edge_text = [], [], []
+    # 4 buckets for each type of coloring
+    green_x, green_y = [], []  # faster than average
+    red_x, red_y = [], []  # slower than average
+    orange_x, orange_y = [], []  # average time
+    grey_x, grey_y = [], []  # no busses
 
-    edges_drawn = 0
+    time_window = 1800  #  1800s = 30min
+    drawn_streets = set()
 
     for node_id, node in graph_nodes.items():
         for edge in node.edges.values():
-            if edges_drawn >= edge_limit:
-                break
-
             a = edge.source
             b = edge.target
+            street_id = f"{a.id}-{b.id}"
 
-            edge_x.extend([a.lon, b.lon, None])
-            edge_y.extend([a.lat, b.lat, None])
+            if street_id not in drawn_streets:
+                drawn_streets.add(street_id)
 
-            # calculate midpoint of edge
-            mid_x = (a.lon + b.lon) / 2
-            mid_y = (a.lat + b.lat) / 2
-            edge_mid_x.append(mid_x)
-            edge_mid_y.append(mid_y)
+                coords_x = [a.lon, b.lon, None]
+                coords_y = [a.lat, b.lat, None]
 
-            # format transit time
-            minutes = int(edge.weight // 60)
-            seconds = int(edge.weight % 60)
-            time_str = f"{minutes}m {seconds}s" if minutes > 0 else f"{seconds}s"
-            #edge_text.append(time_str)
+                if selected_time_sec is None:
+                    grey_x.extend(coords_x)
+                    grey_y.extend(coords_y)
+                    continue
 
-            hover_label = f"{a.name} ➔ {b.name}<br>Duration: {time_str}"
-            edge_text.append(hover_label)
+                valid_trips = [
+                    t for t in edge.schedules
+                    if abs(t['departure'] - selected_time_sec) <= time_window
+                ]
 
-            edges_drawn += 1
+                if not valid_trips:
+                    grey_x.extend(coords_x)
+                    grey_y.extend(coords_y)
+                else:
+                    current_duration = sum(t['duration'] for t in valid_trips) / len(valid_trips)
 
-        # to stop the outer loop as well when edge_limit is reached
-        if edges_drawn >= edge_limit:
-            break
+                    threshold = THRESHOLD
+
+                    if current_duration < edge.avg_weight * (1 - threshold):
+                        green_x.extend(coords_x)
+                        green_y.extend(coords_y)
+                    elif current_duration > edge.avg_weight * (1 + threshold):
+                        red_x.extend(coords_x)
+                        red_y.extend(coords_y)
+                    else:
+                        orange_x.extend(coords_x)
+                        orange_y.extend(coords_y)
 
     node_x, node_y, node_text = [], [], []
-
-    for node_id, node in graph_nodes.items():
+    for node in graph_nodes.values():
         node_x.append(node.lon)
         node_y.append(node.lat)
         node_text.append(node.name)
 
-
-
-    # ===user interface===
     fig = go.Figure()
 
-    # draw edges
+    fig.add_trace(go.Scatter(x=grey_x, y=grey_y, line=dict(width=0.5, color='#333333'), mode='lines', hoverinfo='none'))
+    fig.add_trace(
+        go.Scatter(x=green_x, y=green_y, line=dict(width=1.5, color='#00ff44'), mode='lines', hoverinfo='none'))
+    fig.add_trace(
+        go.Scatter(x=orange_x, y=orange_y, line=dict(width=1.5, color='#ffa500'), mode='lines', hoverinfo='none'))
+    fig.add_trace(go.Scatter(x=red_x, y=red_y, line=dict(width=2.5, color='#ff0033'), mode='lines', hoverinfo='none'))
+
+    # Rysowanie węzłów na wierzchu
     fig.add_trace(go.Scatter(
-        x=edge_x, y=edge_y,
-        line=dict(width=0.5, color='#445555'),
-        hoverinfo='none',
-        mode='lines'
+        x=node_x, y=node_y, mode='markers', hoverinfo='text', text=node_text,
+        marker=dict(color='#00ffcc', size=3, line_width=0)
     ))
 
-    # draw transit time on edge hover
-    fig.add_trace(go.Scatter(
-        x=edge_mid_x, y=edge_mid_y,
-        mode='markers',
-        marker=dict(size=4, color='rgba(0,0,0,0)'),
-        text=edge_text,
-        hoverinfo='text'
-    ))
-
-    # draw nodes
-    fig.add_trace(go.Scatter(
-        x=node_x, y=node_y,
-        mode='markers',
-        hoverinfo='text',  # ensure hoverinfo is set to 'text' for displaying node names
-        text=node_text,  # correctly link node_text to provide hover labels
-        marker=dict(showscale=False, color='#00ffcc', size=3, line_width=0)
-    ))
-
-    # the rest
     fig.update_layout(
-        #title="NeptuNet: Topology of Gdańsk Transit Network",
-        #title_font_size=18,
         showlegend=False,
         hovermode='closest',
-        margin=dict(b=0, l=0, r=0, t=40),
+        margin=dict(b=0, l=0, r=0, t=0),
         plot_bgcolor='#050505',
         paper_bgcolor='#050505',
-        font=dict(color='#00ffcc'),
         xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
         yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
     )
 
-
-    end_time = time.perf_counter() # function timer
-    print(f"draw_graph took {end_time - start_time:.4f} seconds to finish.")
+    end_time = time.perf_counter()
+    print(f"draw_graph took {end_time - start_time:.4f}s to finish")
 
     return fig

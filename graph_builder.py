@@ -1,6 +1,9 @@
 import pandas as pd
 from graph_models import TransitStop, TransitConnection
 import time, os, pickle
+import sys
+
+sys.setrecursionlimit(50000)
 
 CACHE_FILE = "graph_cache.pkl"
 
@@ -101,11 +104,22 @@ def load_edges(nodes_dict: dict[str, TransitStop]) -> int:
 
     return count
 
+def calc_avg_transit_time(nodes_dict: dict[str, TransitStop]):
+    for node in nodes_dict.values():
+        for edge in node.edges.values():
+            if edge.schedules:
+                total_duration = sum(trip['duration'] for trip in edge.schedules)
+                edge.avg_weight = total_duration / len(edge.schedules)
+            else:
+                edge.avg_weight = edge.weight
+
 
 def build_cache() -> tuple[dict, int, int]:
     graph_nodes = {}
     node_counter = load_nodes(graph_nodes)
     edge_counter = load_edges(graph_nodes)
+
+    calc_avg_transit_time(graph_nodes)
 
     with open(CACHE_FILE, 'wb') as f:
         pickle.dump((graph_nodes, node_counter, edge_counter), f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -124,7 +138,7 @@ def get_or_build_graph(force_build: bool = False) -> tuple[dict, int]:
     data_downloaded = False
     if not os.path.exists(stops_path) or not os.path.exists(stop_times_path):
         print("GTFS data missing. fetching latest.")
-        from downloader import fetch_latest_gtfs
+        from data_downloader import fetch_latest_gtfs
         fetch_latest_gtfs()
         data_downloaded = True
     else:
